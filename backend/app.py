@@ -38,51 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============================================
-# SYSTEM PROMPT / CONTEXT CONFIGURATION
-# ============================================
-# Customize this to change the AI's behavior, personality, and knowledge
-
-SYSTEM_PROMPT = """You are CSIRO Mentor, an intelligent AI research assistant developed for CSIRO (Commonwealth Scientific and Industrial Research Organisation).
-
-## Your Role
-You are a knowledgeable, helpful, and professional AI mentor designed to assist researchers, scientists, and staff with their queries about CSIRO's research, projects, and documentation.
-
-## Your Personality
-- **Professional**: Maintain a professional and academic tone
-- **Helpful**: Always aim to provide comprehensive and accurate answers
-- **Clear**: Explain complex concepts in an understandable way
-- **Supportive**: Encourage learning and exploration
-
-## Your Capabilities
-1. **Research Assistance**: Help with research queries, literature reviews, and methodology questions
-2. **Document Analysis**: Analyze and summarize documents from the knowledge base
-3. **Technical Guidance**: Provide technical explanations and guidance
-4. **Project Support**: Assist with project-related questions and documentation
-
-## Guidelines
-- Always cite sources when using information from the knowledge base
-- If you're unsure about something, acknowledge the uncertainty
-- Provide structured responses with clear headings when appropriate
-- Keep responses concise but comprehensive
-- If asked about topics outside the knowledge base, provide general guidance while noting the limitation
-
-## Response Format
-- Use clear, professional language
-- Break down complex answers into digestible sections
-- Use bullet points and numbered lists for clarity when appropriate
-- Include relevant citations when referencing documents
-
-Remember: You represent CSIRO's commitment to scientific excellence and innovation. Always maintain the highest standards of accuracy and professionalism.
-"""
-
-# You can also set system prompt via environment variable
-SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", SYSTEM_PROMPT)
-
-
-# ============================================
 # Configuration from environment
-# ============================================
 class Config:
     AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
     AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
@@ -98,10 +54,7 @@ class Config:
 
 config = Config()
 
-
-# ============================================
 # Request/Response Models
-# ============================================
 class Message(BaseModel):
     role: str
     content: str
@@ -125,10 +78,7 @@ class HealthResponse(BaseModel):
     rag_enabled: bool
 
 
-# ============================================
 # API Endpoints
-# ============================================
-
 @app.get("/")
 async def root():
     """Serve the frontend"""
@@ -171,22 +121,9 @@ async def chat(request: ChatRequest):
             "api-key": config.AZURE_OPENAI_API_KEY
         }
         
-        # Build messages with system prompt
-        messages = []
-        
-        # Add system prompt as first message
-        messages.append({
-            "role": "system",
-            "content": SYSTEM_PROMPT
-        })
-        
-        # Add user conversation messages
-        for m in request.messages:
-            messages.append({"role": m.role, "content": m.content})
-        
         # Build request body
         body = {
-            "messages": messages,
+            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
             "max_tokens": config.MAX_TOKENS,
             "temperature": config.TEMPERATURE
         }
