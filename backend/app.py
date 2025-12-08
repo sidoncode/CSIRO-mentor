@@ -38,7 +38,59 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ============================================
+# SYSTEM PROMPT / CONTEXT CONFIGURATION
+# ============================================
+SYSTEM_PROMPT = """You are CSIRO Mentor, an intelligent AI research assistant developed for CSIRO (Commonwealth Scientific and Industrial Research Organisation).
+
+## Your Role
+You are a knowledgeable, helpful, and professional AI mentor designed to assist researchers, scientists, and staff with their queries about CSIRO's research, projects, and documentation.
+
+## Your Personality
+- **Professional**: Maintain a professional and academic tone
+- **Helpful**: Always aim to provide comprehensive and accurate answers
+- **Clear**: Explain complex concepts in an understandable way
+- **Supportive**: Encourage learning and exploration
+
+## How to Handle Queries
+
+### When information IS found in the knowledge base:
+- Provide detailed answers based on the retrieved documents
+- Always cite which documents you're referencing
+- Summarize key points clearly
+
+### When information is NOT found or is incomplete:
+- DO NOT just say "information not available"
+- Instead, provide helpful general knowledge about the topic
+- Mention that you're providing general information since specific documents weren't found
+- Suggest related topics the user might search for
+
+### When the query is general or conversational:
+- Respond naturally and helpfully
+- You don't need documents for general greetings or simple questions
+- Use your general knowledge to assist
+
+## Response Guidelines
+- Be conversational and helpful, not robotic
+- If documents are retrieved, use them to enhance your answer
+- If documents aren't relevant, still try to help with general knowledge
+- Always aim to provide VALUE to the user
+
+## Available Documents
+The knowledge base contains CSIRO research documents including:
+- Thermal Energy Storage materials
+- Research presentations and reports
+- Scientific documentation
+
+Remember: Your goal is to HELP the user, not to refuse them. Always try to provide useful information.
+"""
+
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", SYSTEM_PROMPT)
+
+
+# ============================================
 # Configuration from environment
+# ============================================
 class Config:
     AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
     AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
@@ -51,10 +103,18 @@ class Config:
     MAX_TOKENS = int(os.getenv("MAX_TOKENS", "4096"))
     TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
     TOP_N_DOCUMENTS = int(os.getenv("TOP_N_DOCUMENTS", "5"))
+    
+    # RAG Settings
+    RAG_QUERY_TYPE = os.getenv("RAG_QUERY_TYPE", "semantic")  # semantic, simple, vector
+    RAG_STRICTNESS = int(os.getenv("RAG_STRICTNESS", "1"))    # 1-5, lower = more flexible
+    RAG_IN_SCOPE = os.getenv("RAG_IN_SCOPE", "false").lower() == "true"  # false = can use general knowledge
 
 config = Config()
 
+
+# ============================================
 # Request/Response Models
+# ============================================
 class Message(BaseModel):
     role: str
     content: str
@@ -78,7 +138,10 @@ class HealthResponse(BaseModel):
     rag_enabled: bool
 
 
+# ============================================
 # API Endpoints
+# ============================================
+
 @app.get("/")
 async def root():
     """Serve the frontend"""
@@ -101,7 +164,10 @@ async def get_config():
     return {
         "rag_enabled": config.ENABLE_RAG,
         "deployment": config.AZURE_OPENAI_DEPLOYMENT,
-        "search_index": config.AZURE_SEARCH_INDEX
+        "search_index": config.AZURE_SEARCH_INDEX,
+        "query_type": config.RAG_QUERY_TYPE,
+        "strictness": config.RAG_STRICTNESS,
+        "in_scope": config.RAG_IN_SCOPE
     }
 
 
@@ -121,9 +187,22 @@ async def chat(request: ChatRequest):
             "api-key": config.AZURE_OPENAI_API_KEY
         }
         
+        # Build messages with system prompt
+        messages = []
+        
+        # Add system prompt as first message
+        messages.append({
+            "role": "system",
+            "content": SYSTEM_PROMPT
+        })
+        
+        # Add user conversation messages
+        for m in request.messages:
+            messages.append({"role": m.role, "content": m.content})
+        
         # Build request body
         body = {
-            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+            "messages": messages,
             "max_tokens": config.MAX_TOKENS,
             "temperature": config.TEMPERATURE
         }
@@ -140,14 +219,20 @@ async def chat(request: ChatRequest):
                             "type": "api_key",
                             "key": config.AZURE_SEARCH_API_KEY
                         },
-                        "query_type": "simple",
-                        "in_scope": True,
-                        "top_n_documents": config.TOP_N_DOCUMENTS
+                        # IMPROVED RAG SETTINGS
+                        "query_type": config.RAG_QUERY_TYPE,      # semantic for better understanding
+                        "strictness": config.RAG_STRICTNESS,       # 1 = most flexible
+                        "in_scope": config.RAG_IN_SCOPE,           # false = can use general knowledge
+                        "top_n_documents": config.TOP_N_DOCUMENTS,
+                        
+                        # Role information to help the model understand context
+                        "role_information": "You are an AI assistant helping users with CSIRO research documents. If the retrieved documents don't contain relevant information, use your general knowledge to help the user while noting that you're providing general information."
                     }
                 }
             ]
         
         logger.info(f"Sending request to Azure OpenAI: {url}")
+        logger.info(f"RAG settings - query_type: {config.RAG_QUERY_TYPE}, strictness: {config.RAG_STRICTNESS}, in_scope: {config.RAG_IN_SCOPE}")
         
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(url, headers=headers, json=body)
