@@ -105,7 +105,7 @@ class Config:
     TOP_N_DOCUMENTS = int(os.getenv("TOP_N_DOCUMENTS", "5"))
     
     # RAG Settings
-    RAG_QUERY_TYPE = os.getenv("RAG_QUERY_TYPE", "simple")  # semantic, simple, vector
+    RAG_QUERY_TYPE = os.getenv("RAG_QUERY_TYPE", "simple")  # simple, semantic, vector (use simple if semantic not configured)
     RAG_STRICTNESS = int(os.getenv("RAG_STRICTNESS", "1"))    # 1-5, lower = more flexible
     RAG_IN_SCOPE = os.getenv("RAG_IN_SCOPE", "false").lower() == "true"  # false = can use general knowledge
 
